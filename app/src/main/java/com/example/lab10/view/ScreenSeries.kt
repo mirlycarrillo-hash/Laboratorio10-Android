@@ -32,15 +32,23 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.lab10.data.SerieApiService
 import com.example.lab10.data.SerieModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun ContenidoSeriesListado(navController: NavHostController, servicio: SerieApiService) {
     var listaSeries: SnapshotStateList<SerieModel> = remember { mutableStateListOf() }
 
     LaunchedEffect(Unit) {
-        val listado = servicio.selectSeries()
-        listado.forEach { listaSeries.add(it) }
+        try {
+            val listado = servicio.selectSeries()
+            listaSeries.clear()
+            listado.forEach { listaSeries.add(it) }
+        } catch (e: Exception) {
+            Log.e("ERROR-LISTA", e.message.toString())
+        }
     }
 
     LazyColumn {
@@ -88,20 +96,25 @@ fun ContenidoSeriesListado(navController: NavHostController, servicio: SerieApiS
 @Composable
 fun ContenidoSerieEditar(navController: NavHostController, servicio: SerieApiService, pid: Int = 0) {
     var id by remember { mutableStateOf<Int>(pid) }
-    var name by remember { mutableStateOf<String?>("") }
-    var release_date by remember { mutableStateOf<String?>("") }
-    var rating by remember { mutableStateOf<String?>("") }
-    var category by remember { mutableStateOf<String?>("") }
-    var grabar by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var release_date by remember { mutableStateOf("") }
+    var rating by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("") }
 
     if (id != 0) {
         LaunchedEffect(Unit) {
-            val objSerie = servicio.selectSerie(id.toString())
-            delay(100)
-            name = objSerie.body()?.name
-            release_date = objSerie.body()?.release_date
-            rating = objSerie.body()?.rating.toString()
-            category = objSerie.body()?.category
+            try {
+                val objSerie = servicio.selectSerie(id.toString())
+                delay(100)
+                if (objSerie.isSuccessful) {
+                    name = objSerie.body()?.name ?: ""
+                    release_date = objSerie.body()?.release_date ?: ""
+                    rating = objSerie.body()?.rating?.toString() ?: ""
+                    category = objSerie.body()?.category ?: ""
+                }
+            } catch (e: Exception) {
+                Log.e("ERROR-CARGAR", e.message.toString())
+            }
         }
     }
 
@@ -116,46 +129,50 @@ fun ContenidoSerieEditar(navController: NavHostController, servicio: SerieApiSer
             singleLine = true
         )
         TextField(
-            value = name!!,
+            value = name,
             onValueChange = { name = it },
             label = { Text("Name: ") },
             singleLine = true
         )
         TextField(
-            value = release_date!!,
+            value = release_date,
             onValueChange = { release_date = it },
-            label = { Text("Release Date:") },
+            label = { Text("Release Date (YYYY-MM-DD):") },
             singleLine = true
         )
         TextField(
-            value = rating!!,
+            value = rating,
             onValueChange = { rating = it },
-            label = { Text("Rating:") },
+            label = { Text("Rating (número entero):") },
             singleLine = true
         )
         TextField(
-            value = category!!,
+            value = category,
             onValueChange = { category = it },
             label = { Text("Category:") },
             singleLine = true
         )
         Button(
-            onClick = { grabar = true }
+            onClick = {
+                val ratingInt = rating.toIntOrNull() ?: 0
+                val objSerie = SerieModel(id, name, release_date, ratingInt, category)
+
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        if (id == 0) {
+                            servicio.insertSerie(objSerie)
+                        } else {
+                            servicio.updateSerie(id.toString(), objSerie)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ERROR-GUARDAR", e.message.toString())
+                    }
+                }
+                navController.navigate("series")
+            }
         ) {
             Text("Grabar", fontSize = 16.sp)
         }
-    }
-
-    if (grabar) {
-        val objSerie = SerieModel(id, name!!, release_date!!, rating!!.toInt(), category!!)
-        LaunchedEffect(Unit) {
-            if (id == 0)
-                servicio.insertSerie(objSerie)
-            else
-                servicio.updateSerie(id.toString(), objSerie)
-        }
-        grabar = false
-        navController.navigate("series")
     }
 }
 
@@ -194,7 +211,11 @@ fun ContenidoSerieEliminar(navController: NavHostController, servicio: SerieApiS
 
     if (borrar) {
         LaunchedEffect(Unit) {
-            servicio.deleteSerie(id.toString())
+            try {
+                servicio.deleteSerie(id.toString())
+            } catch (e: Exception) {
+                Log.e("ERROR-BORRAR", e.message.toString())
+            }
             borrar = false
             navController.navigate("series")
         }
